@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
   CalendarRange,
@@ -11,89 +14,50 @@ import {
 } from "lucide-react";
 
 import { PortalHeader } from "@/components/portal/portal-header";
+import { getUserFromSession, type UserData } from "@/lib/user-client";
 
-const usageOverview = [
-  {
-    title: "GPU 사용률",
-    value: "74%",
-    change: "+6.4%",
-    subtext: "지난주 대비",
-  },
-  {
-    title: "CPU 사용률",
-    value: "61%",
-    change: "-2.1%",
-    subtext: "지난주 대비",
-  },
-  {
-    title: "스토리지 소비",
-    value: "412TB",
-    change: "+4.8%",
-    subtext: "월간 증가",
-  },
-  {
-    title: "평균 대기 시간",
-    value: "3.8분",
-    change: "-1.2분",
-    subtext: "SLA 10분 이하",
-  },
-];
+const usageOverview: Array<{
+  title: string;
+  value: string;
+  change: string;
+  subtext: string;
+}> = [];
 
-const projectUsage = [
-  {
-    name: "양자 시뮬레이션 플랫폼",
-    gpu: "42%",
-    cpu: "860 core",
-    storage: "122TB",
-    cost: "₩18,200,000",
-  },
-  {
-    name: "차세대 기후 모델",
-    gpu: "18%",
-    cpu: "1,540 core",
-    storage: "206TB",
-    cost: "₩23,700,000",
-  },
-  {
-    name: "AI 단백질 접힘",
-    gpu: "27%",
-    cpu: "620 core",
-    storage: "64TB",
-    cost: "₩12,800,000",
-  },
-  {
-    name: "고속 이미지 생성",
-    gpu: "13%",
-    cpu: "480 core",
-    storage: "32TB",
-    cost: "₩7,400,000",
-  },
-];
+const projectUsage: Array<{
+  name: string;
+  gpu: string;
+  cpu: string;
+  storage: string;
+}> = [];
 
-const optimizationTips = [
-  {
-    title: "사용량 패턴 기반 스케일링",
-    description:
-      "실험 종료 시간대에 자동으로 노드를 축소하도록 스케줄링하면 GPU 사용률을 12% 절감할 수 있습니다.",
-  },
-  {
-    title: "스토리지 계층화 제안",
-    description:
-      "장기 보관 데이터 84TB를 오브젝트 스토리지로 이동하면 월 비용이 28% 낮아집니다.",
-  },
-  {
-    title: "큐 정책 조정",
-    description:
-      "배치 큐에 우선순위 가중치를 적용하면 대기 시간을 추가로 1.4분 줄일 수 있습니다.",
-  },
-];
+const optimizationTips: Array<{
+  title: string;
+  description: string;
+}> = [];
 
 export default function UserUsagePage() {
+  const [user, setUser] = useState<UserData | null>(null);
+
+  useEffect(() => {
+    const userData = getUserFromSession();
+    setUser(userData);
+  }, []);
+
+  function getAvatarLabel(name: string): string {
+    if (name.length >= 2) {
+      return name.substring(name.length - 2).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase().padEnd(2, name[0] || "U");
+  }
+
   return (
     <div className="flex min-h-full flex-col">
       <PortalHeader
         title="사용 현황"
         description="프로젝트별 자원 사용량과 효율을 분석하고 최적화 권장 사항을 확인하세요."
+        userName={user?.name || "사용자"}
+        userRole={user?.organization || user?.role || "사용자 조직"}
+        avatarLabel={user ? getAvatarLabel(user.name) : "U"}
         actions={
           <>
             <button className="inline-flex items-center gap-2 rounded-full bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 shadow-[0_10px_25px_rgba(56,189,248,0.35)] transition hover:bg-sky-400">
@@ -109,8 +73,9 @@ export default function UserUsagePage() {
       />
 
       <div className="flex-1 space-y-10 px-6 py-8">
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-white/5 p-6 md:grid-cols-4">
-          {usageOverview.map((metric) => (
+        {usageOverview.length > 0 && (
+          <section className="grid gap-6 rounded-3xl border border-white/10 bg-white/5 p-6 md:grid-cols-4">
+            {usageOverview.map((metric) => (
             <div key={metric.title} className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
               <p className="text-xs uppercase tracking-[0.35em] text-slate-300/80">
                 {metric.title}
@@ -119,8 +84,9 @@ export default function UserUsagePage() {
               <p className="mt-2 text-xs font-semibold text-sky-200">{metric.change}</p>
               <p className="mt-1 text-xs text-slate-400">{metric.subtext}</p>
             </div>
-          ))}
-        </section>
+            ))}
+          </section>
+        )}
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,_1.2fr)_minmax(0,_0.8fr)]">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
@@ -146,33 +112,37 @@ export default function UserUsagePage() {
                     <th className="px-4 py-3 text-left">GPU 사용률</th>
                     <th className="px-4 py-3 text-left">CPU 사용량</th>
                     <th className="px-4 py-3 text-left">스토리지</th>
-                    <th className="px-4 py-3 text-left">예상 비용</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {projectUsage.map((project) => (
-                    <tr key={project.name} className="hover:bg-white/5">
-                      <td className="px-4 py-4 font-semibold text-white">
-                        {project.name}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-2.5 w-24 rounded-full bg-white/5">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-200"
-                              style={{ width: project.gpu }}
-                            />
+                  {projectUsage.length > 0 ? (
+                    projectUsage.map((project) => (
+                      <tr key={project.name} className="hover:bg-white/5">
+                        <td className="px-4 py-4 font-semibold text-white">
+                          {project.name}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-2.5 w-24 rounded-full bg-white/5">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-200"
+                                style={{ width: project.gpu }}
+                              />
+                            </div>
+                            <span className="text-sm text-slate-200">{project.gpu}</span>
                           </div>
-                          <span className="text-sm text-slate-200">{project.gpu}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-sm text-slate-300">{project.cpu}</td>
-                      <td className="px-4 py-4 text-sm text-slate-300">{project.storage}</td>
-                      <td className="px-4 py-4 text-sm font-semibold text-sky-100">
-                        {project.cost}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-slate-300">{project.cpu}</td>
+                        <td className="px-4 py-4 text-sm text-slate-300">{project.storage}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-12 text-center text-sm text-slate-400">
+                        사용 현황 데이터가 없습니다.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -190,21 +160,54 @@ export default function UserUsagePage() {
                 <PieChart className="h-4 w-4 text-slate-400" />
               </div>
               <div className="mt-6 grid gap-4 text-sm text-slate-200">
-                {["GPU", "CPU", "IO", "메모리"].map((label, index) => (
-                  <div key={label} className="flex items-center gap-4">
-                    <div className="h-3 w-3 rounded-full" style={{ backgroundColor: ["#38bdf8", "#22d3ee", "#a855f7", "#f97316"][index] }} />
-                    <div className="flex-1 rounded-full bg-white/5">
-                      <div
-                        className="h-2 rounded-full"
-                        style={{
-                          width: `${[44, 32, 14, 10][index]}%`,
-                          background: `linear-gradient(90deg, ${["#38bdf8", "#22d3ee", "#a855f7", "#f97316"][index]} 0%, rgba(255,255,255,0.7) 100%)`,
-                        }}
-                      />
+                {projectUsage.length > 0 ? (() => {
+                  // 실제 데이터 기반으로 리소스 사용률 계산
+                  const totalGpu = projectUsage.reduce((sum, p) => {
+                    const gpuValue = parseFloat(p.gpu.replace('%', ''));
+                    return sum + (isNaN(gpuValue) ? 0 : gpuValue);
+                  }, 0);
+                  const totalCpu = projectUsage.reduce((sum, p) => {
+                    const cpuValue = parseFloat(p.cpu.replace(' core', '').replace(',', ''));
+                    return sum + (isNaN(cpuValue) ? 0 : cpuValue);
+                  }, 0);
+                  const totalMemory = projectUsage.reduce((sum, p) => {
+                    const memValue = parseFloat(p.storage.replace('TB', '').replace(',', ''));
+                    return sum + (isNaN(memValue) ? 0 : memValue);
+                  }, 0);
+
+                  const maxTotal = Math.max(totalGpu, totalCpu, totalMemory);
+                  const gpuPercent = maxTotal > 0 ? (totalGpu / maxTotal) * 100 : 0;
+                  const cpuPercent = maxTotal > 0 ? (totalCpu / maxTotal) * 100 : 0;
+                  const memoryPercent = maxTotal > 0 ? (totalMemory / maxTotal) * 100 : 0;
+                  const ioPercent = 100 - gpuPercent - cpuPercent - memoryPercent;
+
+                  const resources = [
+                    { label: "GPU", percent: Math.min(gpuPercent, 100), color: "#38bdf8" },
+                    { label: "CPU", percent: Math.min(cpuPercent, 100), color: "#22d3ee" },
+                    { label: "스토리지", percent: Math.min(memoryPercent, 100), color: "#f97316" },
+                    { label: "기타", percent: Math.max(0, Math.min(ioPercent, 100)), color: "#a855f7" },
+                  ].filter(r => r.percent > 0);
+
+                  return resources.map((resource, index) => (
+                    <div key={resource.label} className="flex items-center gap-4">
+                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: resource.color }} />
+                      <div className="flex-1 rounded-full bg-white/5">
+                        <div
+                          className="h-2 rounded-full"
+                          style={{
+                            width: `${resource.percent}%`,
+                            background: `linear-gradient(90deg, ${resource.color} 0%, rgba(255,255,255,0.7) 100%)`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-slate-400">{resource.percent.toFixed(1)}%</span>
                     </div>
-                    <span className="text-xs text-slate-400">{[44, 32, 14, 10][index]}%</span>
+                  ));
+                })() : (
+                  <div className="text-center text-sm text-slate-400 py-4">
+                    데이터가 없어 워크로드 분포를 계산할 수 없습니다.
                   </div>
-                ))}
+                )}
               </div>
               <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/60 p-4 text-xs text-slate-200">
                 GPU 사용률이 70%를 초과할 경우 자동으로 우선순위 조절이 실행됩니다.
@@ -222,18 +225,25 @@ export default function UserUsagePage() {
                 <Sparkles className="h-4 w-4 text-slate-400" />
               </div>
               <ul className="mt-4 space-y-4 text-sm text-slate-200">
-                {optimizationTips.map((tip) => (
-                  <li key={tip.title} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="font-semibold text-white">{tip.title}</p>
-                    <p className="mt-2 text-sm text-slate-300/80">{tip.description}</p>
+                {optimizationTips.length > 0 ? (
+                  optimizationTips.map((tip) => (
+                    <li key={tip.title} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                      <p className="font-semibold text-white">{tip.title}</p>
+                      <p className="mt-2 text-sm text-slate-300/80">{tip.description}</p>
+                    </li>
+                  ))
+                ) : (
+                  <li className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-center text-sm text-slate-400">
+                    최적화 제안이 없습니다.
                   </li>
-                ))}
+                )}
               </ul>
             </div>
           </div>
         </section>
 
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-slate-900/70 to-slate-950/80 p-6 md:grid-cols-[minmax(0,_0.7fr)_minmax(0,_1.3fr)]">
+        {usageOverview.length > 0 && (
+          <section className="grid gap-6 rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-slate-900/70 to-slate-950/80 p-6 md:grid-cols-[minmax(0,_0.7fr)_minmax(0,_1.3fr)]">
           <div className="space-y-4 rounded-3xl border border-white/10 bg-slate-950/60 p-5">
             <p className="text-xs uppercase tracking-[0.35em] text-sky-200">시간대 분석</p>
             <h3 className="text-lg font-semibold text-white">시간대별 사용 패턴</h3>
@@ -313,8 +323,10 @@ export default function UserUsagePage() {
             </div>
           </div>
         </section>
+        )}
 
-        <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+        {usageOverview.length > 0 && (
+          <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.35em] text-slate-300/80">
@@ -342,6 +354,7 @@ export default function UserUsagePage() {
             ))}
           </div>
         </section>
+        )}
       </div>
     </div>
   );

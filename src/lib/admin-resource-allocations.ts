@@ -133,6 +133,83 @@ function computeRequestStatus(
   return "allocating";
 }
 
+export async function createResourceRequest(input: {
+  project: string;
+  owner: string;
+  organisation: string;
+  summary: string;
+  preferredRuntime: string;
+  preferredImage: string;
+  tags?: string[];
+  deadline?: string;
+  requirements: ResourceRequirements;
+}): Promise<ResourceRequest> {
+  const project = input.project?.trim();
+  const owner = input.owner?.trim();
+  const organisation = input.organisation?.trim();
+  const summary = input.summary?.trim();
+  const preferredRuntime = input.preferredRuntime?.trim();
+  const preferredImage = input.preferredImage?.trim();
+
+  if (!project) {
+    throw new Error("프로젝트 이름을 입력하세요.");
+  }
+  if (!owner) {
+    throw new Error("담당자 이름을 입력하세요.");
+  }
+  if (!organisation) {
+    throw new Error("소속 기관을 입력하세요.");
+  }
+  if (!summary) {
+    throw new Error("프로젝트 설명을 입력하세요.");
+  }
+  if (!preferredRuntime) {
+    throw new Error("런타임을 입력하세요.");
+  }
+  if (!preferredImage) {
+    throw new Error("컨테이너 이미지를 입력하세요.");
+  }
+
+  const requirements = input.requirements;
+  if (!Number.isFinite(requirements.gpuCount) || requirements.gpuCount < 0) {
+    throw new Error("GPU 개수가 올바르지 않습니다.");
+  }
+  if (!Number.isFinite(requirements.cpuCores) || requirements.cpuCores < 0) {
+    throw new Error("CPU 코어 수가 올바르지 않습니다.");
+  }
+  if (!Number.isFinite(requirements.memoryGb) || requirements.memoryGb < 0) {
+    throw new Error("메모리 용량이 올바르지 않습니다.");
+  }
+  if (!Number.isFinite(requirements.storageTb) || requirements.storageTb < 0) {
+    throw new Error("스토리지 용량이 올바르지 않습니다.");
+  }
+
+  const store = await readStore();
+
+  const newRequest: ResourceRequest = {
+    id: randomUUID(),
+    project,
+    owner,
+    organisation,
+    summary,
+    preferredRuntime,
+    preferredImage,
+    tags: input.tags || [],
+    deadline: input.deadline?.trim() || undefined,
+    requirements,
+    status: "pending",
+    requestedAt: new Date().toISOString(),
+  };
+
+  store.requests.push(newRequest);
+  await writeStore(store);
+
+  return {
+    ...newRequest,
+    status: computeRequestStatus(newRequest, store.allocations),
+  };
+}
+
 export async function listResourceRequests(): Promise<ResourceRequest[]> {
   const store = await readStore();
   return store.requests.map((request) => ({
@@ -333,5 +410,66 @@ export async function getAllocationOverview(): Promise<{
     requests,
     allocations: store.allocations,
   };
+}
+
+export async function cancelResourceRequest(requestId: string): Promise<ResourceRequest> {
+  const store = await readStore();
+  const index = store.requests.findIndex((entry) => entry.id === requestId);
+  
+  if (index === -1) {
+    throw new Error("신청을 찾을 수 없습니다.");
+  }
+
+  const request = store.requests[index];
+  
+  // 이미 할당된 자원이 있는지 확인
+  const hasAllocations = store.allocations.some(
+    (allocation) => allocation.requestId === requestId
+  );
+
+  if (hasAllocations) {
+    throw new Error("이미 할당된 자원이 있어 취소할 수 없습니다. 관리자에게 문의하세요.");
+  }
+
+  // 상태를 archived로 변경
+  store.requests[index] = {
+    ...request,
+    status: "archived" as ResourceRequestStatus,
+  };
+
+  await writeStore(store);
+
+  return {
+    ...store.requests[index],
+    status: computeRequestStatus(store.requests[index], store.allocations),
+  };
+}
+
+export async function deleteResourceRequest(requestId: string): Promise<void> {
+  const store = await readStore();
+  const index = store.requests.findIndex((entry) => entry.id === requestId);
+  
+  if (index === -1) {
+    throw new Error("신청을 찾을 수 없습니다.");
+  }
+
+  const request = store.requests[index];
+
+  // 이미 할당된 자원이 있는지 확인
+  const hasAllocations = store.allocations.some(
+    (allocation) => allocation.requestId === requestId
+  );
+
+  if (hasAllocations) {
+    throw new Error("이미 할당된 자원이 있어 삭제할 수 없습니다. 관리자에게 문의하세요.");
+  }
+
+  // pending 상태가 아니면 삭제 불가
+  if (request.status !== "pending") {
+    throw new Error("승인 대기 중인 신청만 삭제할 수 있습니다.");
+  }
+
+  store.requests.splice(index, 1);
+  await writeStore(store);
 }
 

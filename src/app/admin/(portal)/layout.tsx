@@ -8,6 +8,7 @@ import {
   CircuitBoard,
   LayoutDashboard,
   Sparkles,
+  Users,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -37,6 +38,12 @@ const navigation = [
     description: "사용량 분석과 운영 정책",
     href: "/admin/reports",
     icon: BarChart3,
+  },
+  {
+    label: "사용자 관리",
+    description: "사용자 등록 및 관리",
+    href: "/admin/users",
+    icon: Users,
   },
 ];
 

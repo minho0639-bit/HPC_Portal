@@ -1,12 +1,15 @@
+"use client";
+
 import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity,
-  LifeBuoy,
   LayoutDashboard,
   ScrollText,
   Sparkles,
 } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { PortalSidebar } from "@/components/portal/portal-sidebar";
 
@@ -29,16 +32,56 @@ const navigation = [
     href: "/user/usage",
     icon: Activity,
   },
-  {
-    label: "지원 센터",
-    description: "가이드와 문의",
-    href: "/user/support",
-    icon: LifeBuoy,
-    badge: "NEW",
-  },
 ];
 
 export default function UserLayout({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    // 로그인 페이지는 인증 체크 제외
+    if (pathname === "/user/login") {
+      setIsAuthorized(true);
+      return;
+    }
+
+    const authed = sessionStorage.getItem("user-authenticated") === "true";
+    const userData = sessionStorage.getItem("user-data");
+
+    if (!authed || !userData) {
+      setIsAuthorized(false);
+      router.replace("/user/login");
+      return;
+    }
+
+    setIsAuthorized(true);
+  }, [router, pathname]);
+
+  if (isAuthorized === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-200">
+        <div className="space-y-3 text-center">
+          <p className="text-xs uppercase tracking-[0.3em] text-sky-300">User Portal</p>
+          <p className="text-sm text-slate-400">사용자 인증을 확인하고 있습니다...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthorized) {
+    return null;
+  }
+
+  // 로그인 페이지는 레이아웃 없이 렌더링
+  if (pathname === "/user/login") {
+    return <>{children}</>;
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-950/90 text-slate-100">
       <PortalSidebar
