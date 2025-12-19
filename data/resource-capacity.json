@@ -1,0 +1,18 @@
+{
+  "cpu": {
+    "totalCores": 4000,
+    "description": "전체 클러스터에서 컨테이너 워크로드에 할당 가능한 vCPU 총량입니다."
+  },
+  "gpu": {
+    "totalUnits": 256,
+    "description": "NVIDIA A100/H100 등 운영 중인 GPU 장비의 총 개수입니다."
+  },
+  "memory": {
+    "totalGb": 16384,
+    "description": "컨테이너 워크로드에 배정 가능한 메모리 총량(GB)입니다."
+  },
+  "storage": {
+    "totalGb": 32768,
+    "description": "컨테이너 워크로드에 할당 가능한 고속 스토리지 총량(GB)입니다."
+  }
+}

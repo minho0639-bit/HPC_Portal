@@ -1,0 +1,49 @@
+[
+  {
+    "id": "d82e3440-522e-4cda-9ac9-1c62734fc0af",
+    "name": "gpu-node-01",
+    "ipAddress": "192.168.219.202",
+    "role": "GPU Cluster",
+    "labels": [
+      "GPU 존",
+      "CPU 존",
+      "스토리지 존"
+    ],
+    "createdAt": "2025-11-12T08:18:53.330Z",
+    "sshUser": "root",
+    "sshPort": 3030
+  },
+  {
+    "id": "5eb99616-cb83-494f-85e3-29259baaa015",
+    "name": "gpu-node-02",
+    "ipAddress": "192.168.219.71",
+    "role": "GPU Cluster",
+    "labels": [
+      "GPU 존"
+    ],
+    "createdAt": "2025-12-19T01:52:04.108Z",
+    "sshPort": 22
+  },
+  {
+    "id": "e413a641-5271-4897-9c14-730328484806",
+    "name": "cpu-node-01",
+    "ipAddress": "192.168.219.160",
+    "role": "Compute Node",
+    "labels": [
+      "CPU 존"
+    ],
+    "createdAt": "2025-12-19T01:53:53.683Z",
+    "sshPort": 3030
+  },
+  {
+    "id": "543a9112-d240-4f26-9246-6d31bf5c21f6",
+    "name": "cpu-node-02",
+    "ipAddress": "192.168.219.113",
+    "role": "Compute Node",
+    "labels": [
+      "CPU 존"
+    ],
+    "createdAt": "2025-12-19T01:55:57.259Z",
+    "sshPort": 3030
+  }
+]
