@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 
 import { listStoredNodes } from "./admin-node-store";
+import { deployContainerWithKubectl } from "./admin-kubectl-deploy";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "admin-resource-allocations.json");
@@ -58,6 +59,15 @@ export interface ContainerAllocation {
   createdAt: string;
   assignedBy: string;
   notes?: string;
+  // 배포 및 접속 정보
+  podName?: string;
+  serviceName?: string;
+  servicePort?: number;
+  accessUrl?: string;
+  accessHost?: string;
+  accessPort?: number;
+  deploymentName?: string;
+  rootPassword?: string;
 }
 
 type AllocationStore = {
@@ -314,6 +324,12 @@ export async function createContainerAllocation(input: {
     throw new Error("선택한 노드를 찾을 수 없습니다. 먼저 노드를 등록하세요.");
   }
 
+  // Deployment 이름 생성 (namespace와 버전 기반)
+  // Kubernetes 리소스 이름은 알파벳으로 시작해야 하므로 "deploy-" 접두사 추가
+  const sanitizedNamespace = namespace.replace(/[^a-zA-Z0-9-]/g, "-").toLowerCase();
+  const sanitizedVersion = version.replace(/[^a-zA-Z0-9-]/g, "-").toLowerCase();
+  const deploymentName = `deploy-${sanitizedNamespace}-${sanitizedVersion}`;
+
   const allocation: ContainerAllocation = {
     id: randomUUID(),
     requestId,
@@ -330,6 +346,7 @@ export async function createContainerAllocation(input: {
     createdAt: new Date().toISOString(),
     assignedBy: assignedBy.trim(),
     notes: notes?.trim() || undefined,
+    deploymentName,
   };
 
   store.allocations.push(allocation);
@@ -339,6 +356,42 @@ export async function createContainerAllocation(input: {
   };
 
   await writeStore(store);
+
+  // kubectl을 통한 실제 배포 실행 (비동기)
+  console.log(`[createContainerAllocation] 배포 시작 - 할당 ID: ${allocation.id}`);
+  deployContainerWithKubectl({
+    nodeId,
+    namespace: namespace.trim(),
+    containerImage: containerImage.trim(),
+    deploymentName,
+    cpuCores,
+    gpuCount,
+    memoryGb,
+    storageGb,
+  })
+    .then((deploymentResult) => {
+      console.log(`[createContainerAllocation] 배포 성공 - 할당 ID: ${allocation.id}`);
+      console.log(`[createContainerAllocation] 배포 결과:`, deploymentResult);
+      // 배포 성공 시 할당 정보 업데이트
+      return updateAllocationWithDeploymentResult(allocation.id, deploymentResult);
+    })
+    .then(() => {
+      console.log(`[createContainerAllocation] 상태 업데이트 완료 - 할당 ID: ${allocation.id}, 상태: running`);
+    })
+    .catch((error) => {
+      console.error(`[createContainerAllocation] 배포 실패 - 할당 ID: ${allocation.id}`, error);
+      // 배포 실패 시 상태를 failed로 업데이트
+      updateContainerAllocationStatus({
+        allocationId: allocation.id,
+        status: "failed",
+      })
+        .then(() => {
+          console.log(`[createContainerAllocation] 상태를 failed로 업데이트 완료 - 할당 ID: ${allocation.id}`);
+        })
+        .catch((updateError) => {
+          console.error(`[createContainerAllocation] 상태 업데이트 실패 - 할당 ID: ${allocation.id}`, updateError);
+        });
+    });
 
   return {
     allocation,
@@ -350,6 +403,63 @@ export async function createContainerAllocation(input: {
       ),
     },
   };
+}
+
+async function updateAllocationWithDeploymentResult(
+  allocationId: string,
+  deploymentResult: {
+    podName: string;
+    deploymentName: string;
+    serviceName: string;
+    servicePort: number;
+    accessHost: string;
+    accessPort: number;
+    accessUrl: string;
+    rootPassword: string;
+  },
+): Promise<void> {
+  console.log(`[updateAllocationWithDeploymentResult] 시작 - 할당 ID: ${allocationId}`);
+  console.log(`[updateAllocationWithDeploymentResult] 배포 결과:`, deploymentResult);
+  
+  const store = await readStore();
+  const index = store.allocations.findIndex((entry) => entry.id === allocationId);
+  
+  if (index === -1) {
+    console.error(`[updateAllocationWithDeploymentResult] 할당을 찾을 수 없습니다: ${allocationId}`);
+    return;
+  }
+
+  console.log(`[updateAllocationWithDeploymentResult] 할당 찾음, 상태를 running으로 업데이트`);
+
+  store.allocations[index] = {
+    ...store.allocations[index],
+    status: "running",
+    podName: deploymentResult.podName,
+    deploymentName: deploymentResult.deploymentName,
+    serviceName: deploymentResult.serviceName,
+    servicePort: deploymentResult.servicePort,
+    accessHost: deploymentResult.accessHost,
+    accessPort: deploymentResult.accessPort,
+    accessUrl: deploymentResult.accessUrl,
+    rootPassword: deploymentResult.rootPassword,
+  };
+
+  // 관련 요청 상태도 업데이트
+  const requestIndex = store.requests.findIndex(
+    (entry) => entry.id === store.allocations[index].requestId,
+  );
+
+  if (requestIndex !== -1) {
+    const oldStatus = store.requests[requestIndex].status;
+    store.requests[requestIndex] = {
+      ...store.requests[requestIndex],
+      status: computeRequestStatus(store.requests[requestIndex], store.allocations),
+    };
+    console.log(`[updateAllocationWithDeploymentResult] 요청 상태 업데이트: ${oldStatus} -> ${store.requests[requestIndex].status}`);
+  }
+
+  await writeStore(store);
+  console.log(`[updateAllocationWithDeploymentResult] 완료 - 할당 ID: ${allocationId}, 상태: running`);
 }
 
 export async function updateContainerAllocationStatus(input: {

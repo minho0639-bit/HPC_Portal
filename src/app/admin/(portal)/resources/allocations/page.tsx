@@ -229,12 +229,16 @@ export default function ContainerAllocationPage() {
           nodes: StoredNode[];
         };
         if (cancelled) return;
-        setRequests(data.requests);
+        // archived(종료) 상태의 신청은 제외
+        const activeRequests = data.requests.filter(
+          (req) => req.status !== "archived"
+        );
+        setRequests(activeRequests);
         setAllocations(data.allocations);
         setNodes(data.nodes);
 
-        if (!selectedRequestId && data.requests.length > 0) {
-          setSelectedRequestId(data.requests[0].id);
+        if (!selectedRequestId && activeRequests.length > 0) {
+          setSelectedRequestId(activeRequests[0].id);
         }
       } catch (fetchError) {
         if (cancelled) return;

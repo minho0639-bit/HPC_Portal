@@ -5,8 +5,15 @@ import {
   createContainerAllocation,
   getAllocationOverview,
   updateContainerAllocationStatus,
+  listContainerAllocations,
 } from "@/lib/admin-resource-allocations";
 import { listStoredNodes } from "@/lib/admin-node-store";
+import {
+  deletePod,
+  deleteDeployment,
+  deleteNamespace,
+  diagnosePendingPod,
+} from "@/lib/admin-kubectl-cleanup";
 
 export async function GET() {
   const [overview, nodes] = await Promise.all([
@@ -165,16 +172,168 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const allocation = await updateContainerAllocationStatus({
+    // 상태 변경 전 할당 정보 조회
+    const allocations = await listContainerAllocations();
+    const allocation = allocations.find((a) => a.id === allocationId);
+
+    if (!allocation) {
+      return NextResponse.json(
+        { error: "할당을 찾을 수 없습니다." },
+        { status: 404 },
+      );
+    }
+
+    // 상태를 "terminated"로 변경하는 경우 Pod와 Deployment 삭제
+    if (status === "terminated" && allocation.nodeId && allocation.namespace) {
+      try {
+        console.log(`[allocations-api] 상태를 terminated로 변경 - 리소스 삭제 시작: ${allocationId}`);
+        
+        // Deployment 삭제 (Pod도 함께 삭제됨)
+        if (allocation.deploymentName) {
+          try {
+            await deleteDeployment({
+              nodeId: allocation.nodeId,
+              namespace: allocation.namespace,
+              deploymentName: allocation.deploymentName,
+            });
+            console.log(`[allocations-api] Deployment 삭제 완료: ${allocation.deploymentName}`);
+          } catch (deleteError) {
+            console.error(`[allocations-api] Deployment 삭제 실패:`, deleteError);
+            // 삭제 실패해도 상태는 변경하도록 계속 진행
+          }
+        }
+      } catch (cleanupError) {
+        console.error(`[allocations-api] 리소스 삭제 중 오류 (상태는 변경됨):`, cleanupError);
+        // 삭제 실패해도 상태는 변경하도록 계속 진행
+      }
+    }
+
+    // 상태 업데이트
+    const updatedAllocation = await updateContainerAllocationStatus({
       allocationId,
       status,
     });
-    return NextResponse.json({ allocation });
+    
+    return NextResponse.json({ allocation: updatedAllocation });
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : "할당 상태를 갱신하지 못했습니다.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "JSON 형식이 올바르지 않습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return NextResponse.json(
+      { error: "요청 본문이 비어 있거나 형식이 잘못되었습니다." },
+      { status: 400 },
+    );
+  }
+
+  const { allocationId, action } = payload as {
+    allocationId?: string;
+    action?: "pod" | "deployment" | "namespace" | "diagnose";
+  };
+
+  if (!allocationId) {
+    return NextResponse.json(
+      { error: "할당 ID를 제공하세요." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const allocations = await listContainerAllocations();
+    const allocation = allocations.find((a) => a.id === allocationId);
+
+    if (!allocation) {
+      return NextResponse.json(
+        { error: "할당을 찾을 수 없습니다." },
+        { status: 404 },
+      );
+    }
+
+    if (!allocation.nodeId || !allocation.namespace) {
+      return NextResponse.json(
+        { error: "할당 정보가 불완전합니다." },
+        { status: 400 },
+      );
+    }
+
+    // 진단 요청
+    if (action === "diagnose" && allocation.podName) {
+      const diagnosis = await diagnosePendingPod({
+        nodeId: allocation.nodeId,
+        namespace: allocation.namespace,
+        podName: allocation.podName,
+      });
+      return NextResponse.json({ diagnosis });
+    }
+
+    // Pod 삭제
+    if (action === "pod" && allocation.podName) {
+      await deletePod({
+        nodeId: allocation.nodeId,
+        namespace: allocation.namespace,
+        podName: allocation.podName,
+      });
+      return NextResponse.json({ message: "Pod가 삭제되었습니다." });
+    }
+
+    // Deployment 삭제
+    if (action === "deployment" && allocation.deploymentName) {
+      await deleteDeployment({
+        nodeId: allocation.nodeId,
+        namespace: allocation.namespace,
+        deploymentName: allocation.deploymentName,
+      });
+      
+      // 할당 상태를 terminated로 업데이트
+      await updateContainerAllocationStatus({
+        allocationId,
+        status: "terminated",
+      });
+      
+      return NextResponse.json({ message: "Deployment가 삭제되었습니다." });
+    }
+
+    // 네임스페이스 삭제 (모든 리소스 포함)
+    if (action === "namespace") {
+      await deleteNamespace({
+        nodeId: allocation.nodeId,
+        namespace: allocation.namespace,
+      });
+      
+      // 할당 상태를 terminated로 업데이트
+      await updateContainerAllocationStatus({
+        allocationId,
+        status: "terminated",
+      });
+      
+      return NextResponse.json({ message: "네임스페이스가 삭제되었습니다." });
+    }
+
+    return NextResponse.json(
+      { error: "지원하지 않는 작업입니다." },
+      { status: 400 },
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "리소스 삭제에 실패했습니다.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

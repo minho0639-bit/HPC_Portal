@@ -50,18 +50,19 @@ export default async function AdminRequestsPage() {
     },
   );
 
+  // archived(종료) 상태의 신청은 제외
+  const activeRequests = requests.filter(
+    (request) => request.status !== "archived"
+  );
+
   const groupedByStatus = (["pending", "allocating", "fulfilled"] as ResourceRequestStatus[])
     .map((status) => ({
       status,
-      requests: requests.filter((request) => request.status === status),
+      requests: activeRequests.filter((request) => request.status === status),
     }))
     .filter((group) => group.requests.length > 0);
 
-  const archivedRequests = requests.filter(
-    (request) => request.status === "archived",
-  );
-
-  const total = requests.length;
+  const total = activeRequests.length;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -213,70 +214,6 @@ export default async function AdminRequestsPage() {
               )}
             </section>
 
-            {archivedRequests.length > 0 ? (
-              <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-slate-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.35em] text-slate-300/80">
-                      종료된 신청
-                    </p>
-                    <h3 className="mt-2 text-lg font-semibold text-white">
-                      보관 내역
-                    </h3>
-                  </div>
-                  <span className="text-xs text-slate-400">
-                    최근 50건만 표시됩니다.
-                  </span>
-                </div>
-
-                <div className="overflow-hidden rounded-2xl border border-white/10">
-                  <table className="min-w-full divide-y divide-white/10 text-left text-xs text-slate-200">
-                    <thead className="bg-slate-950/60 text-[11px] uppercase tracking-widest text-slate-400">
-                      <tr>
-                        <th className="px-4 py-3">신청 ID</th>
-                        <th className="px-4 py-3">프로젝트</th>
-                        <th className="px-4 py-3">요청 자원</th>
-                        <th className="px-4 py-3">마지막 상태</th>
-                        <th className="px-4 py-3">신청 시각</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/10">
-                      {archivedRequests.slice(0, 50).map((request) => (
-                        <tr key={request.id} className="hover:bg-white/5">
-                          <td className="px-4 py-3 font-semibold text-white">
-                            {request.id}
-                          </td>
-                          <td className="px-4 py-3">
-                            <p className="font-semibold text-white">
-                              {request.project}
-                            </p>
-                            <p className="text-[11px] text-slate-400">
-                              {request.organisation}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-300">
-                            CPU {request.requirements.cpuCores} vCore · GPU{" "}
-                            {request.requirements.gpuCount} · 메모리{" "}
-                            {request.requirements.memoryGb}GB · 스토리지{" "}
-                            {request.requirements.storageTb}TB
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-widest ${STATUS_BADGE[request.status]}`}
-                            >
-                              {STATUS_LABEL[request.status]}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-[11px] text-slate-400">
-                            {formatRelativeTime(request.requestedAt)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            ) : null}
           </>
         )}
       </div>
