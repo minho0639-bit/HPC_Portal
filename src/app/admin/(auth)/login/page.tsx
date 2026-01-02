@@ -4,13 +4,10 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight, LockKeyhole, ShieldCheck, Sparkles, Terminal } from "lucide-react";
 
-const DEFAULT_ID = "bitcorp148";
-const DEFAULT_PASSWORD = "7890uiop";
-
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [adminId, setAdminId] = useState(DEFAULT_ID);
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
+  const [adminId, setAdminId] = useState("");
+  const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,18 +26,33 @@ export default function AdminLoginPage() {
     setError("");
     setIsSubmitting(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      const response = await fetch("/api/admin/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username: adminId.trim(), password }),
+      });
 
-    if (adminId.trim() === DEFAULT_ID && password === DEFAULT_PASSWORD) {
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "로그인에 실패했습니다.");
+      }
+
+      const data = await response.json();
+      
       if (typeof window !== "undefined") {
         sessionStorage.setItem("admin-authenticated", "true");
+        sessionStorage.setItem("admin-data", JSON.stringify(data.admin));
       }
-      router.push("/admin/dashboard");
-    } else {
-      setError("접속 정보가 일치하지 않습니다. 기본 제공 계정을 다시 확인하세요.");
-    }
 
-    setIsSubmitting(false);
+      router.push("/admin/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -81,7 +93,7 @@ export default function AdminLoginPage() {
         </div>
         <div className="space-y-3 text-xs text-slate-400">
           <p>ⓒ {new Date().getFullYear()} HPC Portal Operations Center</p>
-          <p>보안 문의: secops@hpc-portal.kr</p>
+          <p>보안 문의: sales@b-itsolution.com</p>
         </div>
       </div>
 
@@ -94,15 +106,15 @@ export default function AdminLoginPage() {
             </div>
             <h2 className="text-2xl font-semibold text-white">관리자 포털 로그인</h2>
             <p className="text-sm text-slate-400">
-              기본 계정으로 접속 후 운영 관리자 계정으로 변경하세요.
+              관리자 계정 정보로 로그인하세요.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300">
-            <p className="font-semibold text-white">기본 접속 정보</p>
-            <p className="mt-2">ID: <span className="font-mono text-sky-200">{DEFAULT_ID}</span></p>
-            <p>PWD: <span className="font-mono text-sky-200">{DEFAULT_PASSWORD}</span></p>
-          </div>
+          {error && (
+            <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
@@ -117,6 +129,7 @@ export default function AdminLoginPage() {
                 onChange={(event) => setAdminId(event.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none transition focus:border-sky-400 focus:bg-slate-900 focus:ring-2 focus:ring-sky-400/40"
                 placeholder="관리자 아이디를 입력하세요"
+                required
               />
             </div>
 
@@ -132,6 +145,7 @@ export default function AdminLoginPage() {
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none transition focus:border-sky-400 focus:bg-slate-900 focus:ring-2 focus:ring-sky-400/40"
                 placeholder="비밀번호를 입력하세요"
+                required
               />
             </div>
 
@@ -151,12 +165,6 @@ export default function AdminLoginPage() {
                 비밀번호 재설정 요청
               </button>
             </div>
-
-            {error && (
-              <p className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200">
-                {error}
-              </p>
-            )}
 
             <button
               type="submit"

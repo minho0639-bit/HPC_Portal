@@ -93,6 +93,13 @@ const REQUEST_STATUS_LABEL: Record<ResourceRequestStatus, string> = {
   archived: "종료",
 };
 
+const REQUEST_STATUS_STYLE: Record<ResourceRequestStatus, string> = {
+  pending: "border border-amber-400/40 bg-amber-500/10 text-amber-100",
+  allocating: "border border-sky-400/40 bg-sky-500/10 text-sky-100",
+  fulfilled: "border border-emerald-400/40 bg-emerald-500/10 text-emerald-100",
+  archived: "border border-slate-400/40 bg-slate-500/10 text-slate-200",
+};
+
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
@@ -235,6 +242,7 @@ export default async function AdminDashboardPage() {
   ];
 
   const sortedRequests = requests
+    .filter((request) => request.status !== "archived") // 종료 상태 제외
     .slice()
     .sort(
       (a, b) =>
@@ -364,7 +372,7 @@ export default async function AdminDashboardPage() {
                           {summarizeRequirements(request.requirements)}
                         </td>
                         <td className="px-4 py-4">
-                          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-sky-100">
+                          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${REQUEST_STATUS_STYLE[request.status]}`}>
                             {REQUEST_STATUS_LABEL[request.status]}
                           </span>
                         </td>

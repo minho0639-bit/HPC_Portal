@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   ArrowUpRight,
   CalendarRange,
@@ -23,25 +23,102 @@ const usageOverview: Array<{
   subtext: string;
 }> = [];
 
-const projectUsage: Array<{
-  name: string;
-  gpu: string;
-  cpu: string;
-  storage: string;
-}> = [];
-
 const optimizationTips: Array<{
   title: string;
   description: string;
 }> = [];
 
+interface ProjectUsage {
+  name: string;
+  gpu: string;
+  cpu: string;
+  storage: string;
+}
+
 export default function UserUsagePage() {
   const [user, setUser] = useState<UserData | null>(null);
+  const [projectUsage, setProjectUsage] = useState<ProjectUsage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     const userData = getUserFromSession();
     setUser(userData);
   }, []);
+
+  const loadProjectUsage = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      setIsRefreshing(true);
+      const response = await fetch(`/api/user/allocations?owner=${encodeURIComponent(user.name || user.username)}`);
+      if (!response.ok) {
+        throw new Error("할당 정보를 불러오지 못했습니다.");
+      }
+      const data = await response.json();
+      const allocations = data.allocations || [];
+
+      // 실행 중인 할당만 필터링
+      const runningAllocations = allocations.filter(
+        (allocation: any) => allocation.status === "running" && allocation.request?.project
+      );
+
+      // 프로젝트별로 리소스 집계
+      const projectMap = new Map<string, {
+        gpuCount: number;
+        cpuCores: number;
+        storageGb: number;
+      }>();
+
+      runningAllocations.forEach((allocation: any) => {
+        const projectName = allocation.request?.project || "기타";
+        const current = projectMap.get(projectName) || { gpuCount: 0, cpuCores: 0, storageGb: 0 };
+        
+        projectMap.set(projectName, {
+          gpuCount: current.gpuCount + (allocation.gpuCount || 0),
+          cpuCores: current.cpuCores + (allocation.cpuCores || 0),
+          storageGb: current.storageGb + (allocation.storageGb || 0),
+        });
+      });
+
+      // 프로젝트별 사용량 데이터 변환
+      const projectUsageData: ProjectUsage[] = Array.from(projectMap.entries())
+        .map(([name, usage]) => {
+          // 스토리지 포맷팅 (GB를 TB로 변환)
+          const storageTb = usage.storageGb / 1024;
+          const storageDisplay = storageTb >= 1 
+            ? `${storageTb.toFixed(2)}TB`
+            : `${usage.storageGb.toFixed(0)}GB`;
+
+          return {
+            name,
+            gpu: `${usage.gpuCount}개`,
+            cpu: `${usage.cpuCores.toLocaleString()} core`,
+            storage: storageDisplay,
+          };
+        })
+        .sort((a, b) => {
+          // GPU 개수 기준으로 정렬
+          const aGpu = parseFloat(a.gpu.replace('개', ''));
+          const bGpu = parseFloat(b.gpu.replace('개', ''));
+          return bGpu - aGpu;
+        });
+
+      setProjectUsage(projectUsageData);
+    } catch (error) {
+      console.error("프로젝트별 사용량 로드 실패:", error);
+      setProjectUsage([]);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadProjectUsage();
+    }
+  }, [user, loadProjectUsage]);
 
   function getAvatarLabel(name: string): string {
     if (name.length >= 2) {
@@ -98,9 +175,13 @@ export default function UserUsagePage() {
                 <h2 className="mt-2 text-xl font-semibold text-white">상세 지표</h2>
               </div>
               <div className="flex gap-2">
-                <button className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-100 transition hover:border-sky-200 hover:text-sky-100">
+                <button
+                  onClick={loadProjectUsage}
+                  disabled={isRefreshing}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-100 transition hover:border-sky-200 hover:text-sky-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   실시간 갱신
-                  <RefreshCcw className="h-3.5 w-3.5" />
+                  <RefreshCcw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
                 </button>
               </div>
             </div>
@@ -109,33 +190,52 @@ export default function UserUsagePage() {
                 <thead className="bg-white/5 text-xs uppercase tracking-wider text-slate-300">
                   <tr>
                     <th className="px-4 py-3 text-left">프로젝트</th>
-                    <th className="px-4 py-3 text-left">GPU 사용률</th>
+                    <th className="px-4 py-3 text-left">GPU 할당량</th>
                     <th className="px-4 py-3 text-left">CPU 사용량</th>
                     <th className="px-4 py-3 text-left">스토리지</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {projectUsage.length > 0 ? (
-                    projectUsage.map((project) => (
-                      <tr key={project.name} className="hover:bg-white/5">
-                        <td className="px-4 py-4 font-semibold text-white">
-                          {project.name}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="h-2.5 w-24 rounded-full bg-white/5">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-200"
-                                style={{ width: project.gpu }}
-                              />
-                            </div>
-                            <span className="text-sm text-slate-200">{project.gpu}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-sm text-slate-300">{project.cpu}</td>
-                        <td className="px-4 py-4 text-sm text-slate-300">{project.storage}</td>
-                      </tr>
-                    ))
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-12 text-center text-sm text-slate-400">
+                        데이터를 불러오는 중...
+                      </td>
+                    </tr>
+                  ) : projectUsage.length > 0 ? (
+                    (() => {
+                      // 최대 GPU 개수 계산 (프로그레스 바 표시용)
+                      const maxGpu = Math.max(
+                        ...projectUsage.map((p) => parseFloat(p.gpu.replace('개', ''))),
+                        1
+                      );
+                      
+                      return projectUsage.map((project) => {
+                        const gpuCount = parseFloat(project.gpu.replace('개', ''));
+                        const gpuPercent = maxGpu > 0 ? (gpuCount / maxGpu) * 100 : 0;
+                        
+                        return (
+                          <tr key={project.name} className="hover:bg-white/5">
+                            <td className="px-4 py-4 font-semibold text-white">
+                              {project.name}
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="h-2.5 w-24 rounded-full bg-white/5">
+                                  <div
+                                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-200"
+                                    style={{ width: `${Math.min(gpuPercent, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-sm text-slate-200">{project.gpu}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-sm text-slate-300">{project.cpu}</td>
+                            <td className="px-4 py-4 text-sm text-slate-300">{project.storage}</td>
+                          </tr>
+                        );
+                      });
+                    })()
                   ) : (
                     <tr>
                       <td colSpan={4} className="px-4 py-12 text-center text-sm text-slate-400">
@@ -163,7 +263,7 @@ export default function UserUsagePage() {
                 {projectUsage.length > 0 ? (() => {
                   // 실제 데이터 기반으로 리소스 사용률 계산
                   const totalGpu = projectUsage.reduce((sum, p) => {
-                    const gpuValue = parseFloat(p.gpu.replace('%', ''));
+                    const gpuValue = parseFloat(p.gpu.replace('개', ''));
                     return sum + (isNaN(gpuValue) ? 0 : gpuValue);
                   }, 0);
                   const totalCpu = projectUsage.reduce((sum, p) => {

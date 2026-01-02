@@ -238,7 +238,7 @@ export async function deployContainerWithKubectl(input: {
   memoryGb: number;
   storageGb: number;
 }): Promise<DeploymentResult> {
-  const { nodeId, namespace, containerImage, deploymentName, cpuCores, gpuCount, memoryGb } = input;
+  const { nodeId, namespace, containerImage, deploymentName, cpuCores, gpuCount, memoryGb, storageGb } = input;
 
   const node = await getStoredNode(nodeId);
   if (!node) {
@@ -257,7 +257,7 @@ export async function deployContainerWithKubectl(input: {
       console.log(`[kubectl-deploy] Deployment 이름: ${deploymentName}`);
       
       // 1. 네임스페이스 생성
-      console.log(`[kubectl-deploy] [1/6] 네임스페이스 생성 시작: ${namespace}`);
+      console.log(`[kubectl-deploy] [1/7] 네임스페이스 생성 시작: ${namespace}`);
       try {
         const nsOutput = await execCommand(
           conn,
@@ -275,17 +275,86 @@ export async function deployContainerWithKubectl(input: {
         }
       }
 
-      // 2. 리소스 제한 계산 (메모리는 Mi 단위, CPU는 millicores)
+      // 2. PVC 생성 (스토리지가 필요한 경우)
+      let pvcName = "";
+      if (storageGb > 0) {
+        console.log(`[kubectl-deploy] [2/7] PVC 생성 시작: ${storageGb}GB`);
+        pvcName = `pvc-${deploymentName}`;
+        const safePvcName = JSON.stringify(pvcName);
+        const safeNamespace = JSON.stringify(namespace);
+        
+        const pvcYaml = `apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${safePvcName}
+  namespace: ${safeNamespace}
+  labels:
+    app: ${JSON.stringify(deploymentName)}
+    managed-by: supercomputing-portal
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: ${storageGb}Gi
+  storageClassName: local-path
+`;
+
+        const tempPvcFile = `/tmp/pvc-${deploymentName}-${Date.now()}.yaml`;
+        console.log(`[kubectl-deploy] PVC YAML 저장: ${tempPvcFile}`);
+        await execCommand(conn, `cat > ${tempPvcFile} << 'EOF'\n${pvcYaml}\nEOF`);
+        
+        try {
+          const pvcApplyOutput = await execCommand(conn, `kubectl apply -f ${tempPvcFile} 2>&1`);
+          console.log(`[kubectl-deploy] PVC apply 결과: ${pvcApplyOutput}`);
+          
+          // PVC가 Bound 상태가 될 때까지 대기 (최대 30초)
+          console.log(`[kubectl-deploy] PVC Bound 상태 대기 중...`);
+          let pvcBound = false;
+          for (let i = 0; i < 6; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+            try {
+              const pvcStatus = await execCommand(
+                conn,
+                `kubectl get pvc ${pvcName} -n ${namespace} -o jsonpath='{.status.phase}' 2>/dev/null || echo 'Pending'`
+              );
+              console.log(`[kubectl-deploy] PVC 상태 확인 (${i + 1}/6): ${pvcStatus.trim()}`);
+              if (pvcStatus.trim() === "Bound") {
+                pvcBound = true;
+                console.log(`[kubectl-deploy] PVC가 Bound 상태입니다!`);
+                break;
+              }
+            } catch (e) {
+              console.warn(`[kubectl-deploy] PVC 상태 확인 실패:`, e);
+            }
+          }
+          
+          if (!pvcBound) {
+            console.warn(`[kubectl-deploy] PVC가 아직 Bound 상태가 아닙니다. 계속 진행합니다.`);
+          }
+        } catch (error) {
+          console.error(`[kubectl-deploy] PVC 생성 실패:`, error);
+          throw new Error(`PVC 생성 실패: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          await execCommand(conn, `rm -f ${tempPvcFile}`);
+        }
+        
+        console.log(`[kubectl-deploy] [2/7] PVC 생성 완료: ${pvcName}`);
+      } else {
+        console.log(`[kubectl-deploy] [2/7] 스토리지가 0GB이므로 PVC를 생성하지 않습니다.`);
+      }
+
+      // 3. 리소스 제한 계산 (메모리는 Mi 단위, CPU는 millicores)
       const memoryMi = Math.ceil(memoryGb * 1024);
       const cpuMilli = Math.ceil(cpuCores * 1000);
-      console.log(`[kubectl-deploy] [2/6] 리소스 계산 완료: CPU=${cpuMilli}m, Memory=${memoryMi}Mi, GPU=${gpuCount}`);
+      console.log(`[kubectl-deploy] [3/7] 리소스 계산 완료: CPU=${cpuMilli}m, Memory=${memoryMi}Mi, GPU=${gpuCount}, Storage=${storageGb}GB`);
 
-      // 2.5. root 비밀번호 생성
+      // 3.5. root 비밀번호 생성
       const rootPassword = generateRandomPassword();
-      console.log(`[kubectl-deploy] [2.5/6] root 비밀번호 생성 완료`);
+      console.log(`[kubectl-deploy] [3.5/7] root 비밀번호 생성 완료`);
 
-      // 3. Deployment 생성
-      console.log(`[kubectl-deploy] [3/6] Deployment YAML 생성 시작`);
+      // 4. Deployment 생성
+      console.log(`[kubectl-deploy] [4/7] Deployment YAML 생성 시작`);
       // YAML에서 namespace와 name이 숫자로 시작할 수 있으므로 따옴표로 감싸기
       const safeNamespace = JSON.stringify(namespace);
       const safeDeploymentName = JSON.stringify(deploymentName);
@@ -338,7 +407,17 @@ spec:
         ports:
         - containerPort: 22
           name: ssh
-          protocol: TCP
+          protocol: TCP`;
+
+      // 스토리지가 있는 경우 volumeMounts 추가
+      if (storageGb > 0 && pvcName) {
+        deploymentYaml += `
+        volumeMounts:
+        - name: workspace-storage
+          mountPath: /workspace`;
+      }
+
+      deploymentYaml += `
         env:
         - name: ROOT_PASSWORD
           value: ${JSON.stringify(rootPassword)}
@@ -349,7 +428,19 @@ spec:
             chmod 700 /run/sshd && \
             echo "root:${rootPassword}" | chpasswd && \
             /usr/sbin/sshd -D -e
-      restartPolicy: Always
+      restartPolicy: Always`;
+
+      // 스토리지가 있는 경우 volumes 추가
+      if (storageGb > 0 && pvcName) {
+        const safePvcName = JSON.stringify(pvcName);
+        deploymentYaml += `
+      volumes:
+      - name: workspace-storage
+        persistentVolumeClaim:
+          claimName: ${safePvcName}`;
+      }
+
+      deploymentYaml += `
 `;
 
       // 임시 파일로 저장 후 적용
@@ -365,10 +456,10 @@ spec:
       
       await execCommand(conn, `rm -f ${tempFile}`);
 
-      console.log(`[kubectl-deploy] [3/6] Deployment 생성 완료: ${deploymentName}`);
+      console.log(`[kubectl-deploy] [4/7] Deployment 생성 완료: ${deploymentName}`);
 
-      // 4. Pod가 준비될 때까지 대기 (최대 60초)
-      console.log(`[kubectl-deploy] [4/6] Pod 준비 상태 확인 시작`);
+      // 5. Pod가 준비될 때까지 대기 (최대 60초)
+      console.log(`[kubectl-deploy] [5/7] Pod 준비 상태 확인 시작`);
       let podReady = false;
       let podName = "";
       
@@ -648,10 +739,10 @@ spec:
         throw new Error(errorMessage);
       }
 
-      console.log(`[kubectl-deploy] [4/6] Pod 준비 완료: ${podName}`);
+      console.log(`[kubectl-deploy] [5/7] Pod 준비 완료: ${podName}`);
 
-      // 5. Service 생성 (NodePort 타입)
-      console.log(`[kubectl-deploy] [5/6] Service 생성 시작`);
+      // 6. Service 생성 (NodePort 타입)
+      console.log(`[kubectl-deploy] [6/7] Service 생성 시작`);
       // Service 이름은 알파벳으로 시작해야 하므로 "svc-" 접두사 추가
       const serviceName = `svc-${deploymentName.replace(/^deploy-/, "")}`;
       const nodePort = await findAvailableNodePort(conn, 30000);
@@ -689,10 +780,10 @@ spec:
       
       await execCommand(conn, `rm -f ${tempServiceFile}`);
 
-      console.log(`[kubectl-deploy] [5/6] Service 생성 완료: ${serviceName}, NodePort: ${nodePort}`);
+      console.log(`[kubectl-deploy] [6/7] Service 생성 완료: ${serviceName}, NodePort: ${nodePort}`);
 
-      // 6. 접속 정보 생성
-      console.log(`[kubectl-deploy] [6/6] 접속 정보 생성`);
+      // 7. 접속 정보 생성
+      console.log(`[kubectl-deploy] [7/7] 접속 정보 생성`);
       const accessHost = node.ipAddress;
       const accessPort = nodePort; // NodePort
       const accessUrl = `ssh://${accessHost}:${accessPort}`;

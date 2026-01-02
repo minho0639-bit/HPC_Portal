@@ -228,6 +228,18 @@ export async function deleteDeployment(input: {
       );
       console.log(`[kubectl-cleanup] Deployment 삭제 결과: ${deleteDeploymentOutput}`);
       
+      // PVC 삭제 (PVC 이름 형식: pvc-{deploymentName})
+      const pvcName = `pvc-${deploymentName}`;
+      try {
+        const deletePvcOutput = await execCommand(
+          conn,
+          `kubectl delete pvc ${pvcName} -n ${namespace} 2>&1 || echo ''`
+        );
+        console.log(`[kubectl-cleanup] PVC 삭제 결과: ${deletePvcOutput}`);
+      } catch (e) {
+        console.warn(`[kubectl-cleanup] PVC 삭제 실패 (무시):`, e);
+      }
+      
       console.log(`[kubectl-cleanup] Deployment 삭제 완료: ${deploymentName}`);
     } catch (error) {
       console.error("[kubectl-cleanup] Deployment 삭제 실패:", error);

@@ -1065,13 +1065,32 @@ export default function ContainerAllocationPage() {
                     </td>
                   </tr>
                 ) : (
-                  allocations.map((allocation) => {
-                    const node = nodes.find((entry) => entry.id === allocation.nodeId);
-                    // 타임라인에서는 모든 신청(allRequests)에서 찾아야 종료된 컨테이너의 신청 정보도 표시됨
-                    const request = allRequests.find(
-                      (entry) => entry.id === allocation.requestId,
-                    );
-                    return (
+                  allocations
+                    .slice()
+                    .sort((a, b) => {
+                      // 상태 우선순위: running > deploying > failed > terminated
+                      const statusPriority: Record<ContainerAllocationStatus, number> = {
+                        running: 1,
+                        deploying: 2,
+                        failed: 3,
+                        terminated: 4,
+                      };
+                      const priorityDiff = statusPriority[a.status] - statusPriority[b.status];
+                      if (priorityDiff !== 0) {
+                        return priorityDiff;
+                      }
+                      // 같은 우선순위면 최신순으로 정렬
+                      return (
+                        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                      );
+                    })
+                    .map((allocation) => {
+                      const node = nodes.find((entry) => entry.id === allocation.nodeId);
+                      // 타임라인에서는 모든 신청(allRequests)에서 찾아야 종료된 컨테이너의 신청 정보도 표시됨
+                      const request = allRequests.find(
+                        (entry) => entry.id === allocation.requestId,
+                      );
+                      return (
                       <tr key={allocation.id} className="hover:bg-white/5">
                         <td className="px-4 py-4">
                           <p className="font-semibold text-white">
