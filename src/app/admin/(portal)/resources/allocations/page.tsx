@@ -158,6 +158,7 @@ const formatNodeLabels = (labels: string[]) =>
 
 export default function ContainerAllocationPage() {
   const [requests, setRequests] = useState<ResourceRequest[]>([]);
+  const [allRequests, setAllRequests] = useState<ResourceRequest[]>([]); // 타임라인용: 모든 신청 포함
   const [nodes, setNodes] = useState<StoredNode[]>([]);
   const [allocations, setAllocations] = useState<ContainerAllocation[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
@@ -229,7 +230,9 @@ export default function ContainerAllocationPage() {
           nodes: StoredNode[];
         };
         if (cancelled) return;
-        // archived(종료) 상태의 신청은 제외
+        // 모든 신청 저장 (타임라인에서 종료된 컨테이너의 신청 정보를 찾기 위해)
+        setAllRequests(data.requests);
+        // archived(종료) 상태의 신청은 제외 (신청 선택 드롭다운용)
         const activeRequests = data.requests.filter(
           (req) => req.status !== "archived"
         );
@@ -1064,7 +1067,8 @@ export default function ContainerAllocationPage() {
                 ) : (
                   allocations.map((allocation) => {
                     const node = nodes.find((entry) => entry.id === allocation.nodeId);
-                    const request = requests.find(
+                    // 타임라인에서는 모든 신청(allRequests)에서 찾아야 종료된 컨테이너의 신청 정보도 표시됨
+                    const request = allRequests.find(
                       (entry) => entry.id === allocation.requestId,
                     );
                     return (
@@ -1082,7 +1086,7 @@ export default function ContainerAllocationPage() {
                         </td>
                         <td className="px-4 py-4">
                           <p className="text-[11px] text-slate-300">
-                            신청 {allocation.requestId}
+                            {request ? `${request.organisation} · ${request.owner}` : `신청 ${allocation.requestId}`}
                           </p>
                           <p className="text-sm font-semibold text-sky-100">
                             {request?.project ?? "알 수 없는 신청"}

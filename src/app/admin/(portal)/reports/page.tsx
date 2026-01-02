@@ -1,3 +1,6 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -12,43 +15,63 @@ import {
 } from "lucide-react";
 
 import { PortalHeader } from "@/components/portal/portal-header";
-
-const efficiencyMetrics = [
-  {
-    label: "GPU 효율",
-    value: "86%",
-    change: "+4.2%",
-    detail: "우선순위 정책 적용 후",
-  },
-  {
-    label: "CPU 효율",
-    value: "79%",
-    change: "+2.7%",
-    detail: "큐 정렬 최적화",
-  },
-  {
-    label: "큐 대기 시간",
-    value: "3.8분",
-    change: "-1.2분",
-    detail: "SLA 10분 이하 유지",
-  },
-  {
-    label: "자원 활용률",
-    value: "82%",
-    change: "+3.5%",
-    detail: "전체 클러스터 기준",
-  },
-];
-
-const organizationBreakdown = [
-  { name: "국가기상센터", share: 28, hours: 12_480 },
-  { name: "국가재난대응본부", share: 24, hours: 10_920 },
-  { name: "생명정보융합연구단", share: 19, hours: 9_210 },
-  { name: "산업협력 R&D", share: 17, hours: 7_640 },
-  { name: "기타", share: 12, hours: 4_320 },
-];
+import {
+  efficiencyMetrics,
+  policyCompliance,
+  optimizationTips,
+  weeklyTrendNotes,
+  monthlyReports,
+  hourlyTrendData,
+  type OrganizationUsage,
+} from "@/lib/report-data";
+import { generateMonthlyReportPDF } from "@/lib/report-pdf-generator";
+import { HourlyTrendChart } from "@/components/reports/hourly-trend-chart";
 
 export default function AdminReportsPage() {
+  const [isGenerating, setIsGenerating] = useState<string | null>(null);
+  const [organizationBreakdown, setOrganizationBreakdown] = useState<OrganizationUsage[]>([]);
+  const [isLoadingOrgData, setIsLoadingOrgData] = useState(true);
+
+  // 실제 조직별 사용량 데이터 가져오기
+  useEffect(() => {
+    async function loadOrganizationData() {
+      setIsLoadingOrgData(true);
+      try {
+        const response = await fetch("/api/admin/reports/organization-usage");
+        if (!response.ok) {
+          throw new Error("데이터 로드 실패");
+        }
+        const result = await response.json();
+        setOrganizationBreakdown(result.data || []);
+      } catch (error) {
+        console.error("조직별 사용량 데이터 로드 실패:", error);
+        setOrganizationBreakdown([]);
+      } finally {
+        setIsLoadingOrgData(false);
+      }
+    }
+    loadOrganizationData();
+  }, []);
+
+  const handleDownloadPDF = async (month: string) => {
+    setIsGenerating(month);
+    try {
+      await generateMonthlyReportPDF({
+        month,
+        efficiencyMetrics,
+        organizationBreakdown,
+        policyCompliance,
+        optimizationTips,
+        weeklyTrendNotes,
+      });
+    } catch (error) {
+      console.error("PDF 생성 중 오류 발생:", error);
+      alert("PDF 생성 중 오류가 발생했습니다.");
+    } finally {
+      setIsGenerating(null);
+    }
+  };
+
   return (
     <div className="flex min-h-full flex-col">
       <PortalHeader
@@ -92,14 +115,13 @@ export default function AdminReportsPage() {
               </div>
               <LineChart className="h-4 w-4 text-slate-400" />
             </div>
-            <div className="mt-6 h-48 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/50">
-              <div className="h-full bg-[radial-gradient(circle_at_bottom,_rgba(56,189,248,0.28),_transparent_65%)]" />
-              <div className="absolute" />
+            <div className="mt-6 h-48 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+              <HourlyTrendChart data={hourlyTrendData} className="h-full w-full" />
             </div>
             <div className="mt-4 grid gap-3 text-xs text-slate-300">
-              <p>• 새벽 02~05시 GPU 사용률 92% → 야간 큐 재배치 필요</p>
-              <p>• 산업 협력 프로젝트 CPU 사용량 주간 평균 +7% 증가</p>
-              <p>• 네임스페이스 자동 스케일 이벤트 18건, 실패 0건</p>
+              {weeklyTrendNotes.map((note, index) => (
+                <p key={index}>• {note}</p>
+              ))}
             </div>
           </div>
 
@@ -112,21 +134,31 @@ export default function AdminReportsPage() {
               <PieChart className="h-4 w-4 text-slate-300" />
             </div>
             <div className="mt-6 space-y-4 text-sm text-slate-200">
-              {organizationBreakdown.map((org) => (
-                <div key={org.name} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-white">{org.name}</p>
-                    <span className="text-xs font-semibold text-sky-200">{org.share}%</span>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-400">누적 사용 {org.hours.toLocaleString()} core-hr</p>
-                  <div className="mt-3 h-2 rounded-full bg-white/5">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-200"
-                      style={{ width: `${org.share}%` }}
-                    />
-                  </div>
+              {isLoadingOrgData ? (
+                <div className="text-center py-8 text-slate-400">데이터를 불러오는 중...</div>
+              ) : organizationBreakdown.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  현재 사용 중인 조직이 없습니다.
+                  <br />
+                  <span className="text-xs">실행 중인 할당이 없거나 조직 정보가 없습니다.</span>
                 </div>
-              ))}
+              ) : (
+                organizationBreakdown.map((org) => (
+                  <div key={org.name} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-white">{org.name}</p>
+                      <span className="text-xs font-semibold text-sky-200">{org.share}%</span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">누적 사용 {org.hours.toLocaleString()} core-hr</p>
+                    <div className="mt-3 h-2 rounded-full bg-white/5">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-200"
+                        style={{ width: `${org.share}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </section>
@@ -141,18 +173,12 @@ export default function AdminReportsPage() {
               <ShieldCheck className="h-4 w-4 text-slate-400" />
             </div>
             <div className="mt-6 grid gap-4 text-sm text-slate-200">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="font-semibold text-white">접근 제어</p>
-                <p className="mt-1 text-xs text-slate-400">MFA 미등록 계정 2건 → 메일 발송 완료</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="font-semibold text-white">데이터 보관 정책</p>
-                <p className="mt-1 text-xs text-slate-400">14건 만료 예정 → 자동 아카이브 준비</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="font-semibold text-white">정책 위반</p>
-                <p className="mt-1 text-xs text-slate-400">이번 달 0건 (전달 3건 대비 개선)</p>
-              </div>
+              {policyCompliance.map((policy) => (
+                <div key={policy.title} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="font-semibold text-white">{policy.title}</p>
+                  <p className="mt-1 text-xs text-slate-400">{policy.description}</p>
+                </div>
+              ))}
             </div>
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-200">
               정책 리포트는 월 1회 감사위원회에 공유됩니다. 예외 승인 내역은 별도 PDF 첨부.
@@ -168,13 +194,9 @@ export default function AdminReportsPage() {
               <Sparkles className="h-4 w-4 text-slate-300" />
             </div>
             <div className="mt-6 space-y-4">
-              {[
-                "GPU 풀에 야간 자동 스케일 전략 적용 시 효율 +6%",
-                "스토리지 tier-2 데이터 18TB 아카이빙 권장",
-                "큐 정책에서 산업 협력 프로젝트 가중치 +0.3 필요",
-              ].map((tip) => (
-                <div key={tip} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-sm text-slate-200">{tip}</p>
+              {optimizationTips.map((tip, index) => (
+                <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-sm text-slate-200">{tip.text}</p>
                 </div>
               ))}
             </div>
@@ -204,13 +226,17 @@ export default function AdminReportsPage() {
             </div>
           </div>
           <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {["2025-02", "2025-01", "2024-12", "2024-11"].map((month) => (
-              <div key={month} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-200">
+            {monthlyReports.map((report) => (
+              <div key={report.month} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-200">
                 <p className="text-xs uppercase tracking-[0.35em] text-slate-400">월간 리포트</p>
-                <p className="mt-2 text-lg font-semibold text-white">{month}</p>
+                <p className="mt-2 text-lg font-semibold text-white">{report.month}</p>
                 <p className="mt-1 text-xs text-slate-400">PDF · CSV · API</p>
-                <button className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-sky-100 transition hover:bg-white/20">
-                  다운로드
+                <button
+                  onClick={() => handleDownloadPDF(report.month)}
+                  disabled={isGenerating === report.month}
+                  className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-sky-100 transition hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating === report.month ? "생성 중..." : "PDF 다운로드"}
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -221,4 +247,3 @@ export default function AdminReportsPage() {
     </div>
   );
 }
-

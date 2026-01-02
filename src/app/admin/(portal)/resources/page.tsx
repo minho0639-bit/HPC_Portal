@@ -12,6 +12,8 @@ import {
 import { PortalHeader } from "@/components/portal/portal-header";
 import { listStoredNodes } from "@/lib/admin-node-store";
 import type { StoredNode } from "@/lib/admin-node-types";
+import { listTemplates } from "@/lib/container-image-store";
+import type { ContainerImageTemplate } from "@/lib/container-image-store";
 import NodeRegistryPanel from "./node-registry-panel";
 
 type ClusterZoneSummary = {
@@ -36,7 +38,44 @@ type ContainerProfile = {
   changelog?: string;
 };
 
-const containerProfiles: ContainerProfile[] = [];
+// 이미지 템플릿을 ContainerProfile 형식으로 변환
+function convertTemplateToProfile(
+  template: ContainerImageTemplate,
+): ContainerProfile {
+  // 이미지 이름에서 registry와 tag 추출
+  // 예: "nginx:latest" -> registry: "docker.io", tag: "latest"
+  // 예: "registry.example.com/myapp:v1.0" -> registry: "registry.example.com", tag: "v1.0"
+  const imageParts = template.image.split(":");
+  const tag = imageParts.length > 1 ? imageParts[imageParts.length - 1] : "latest";
+  const imageName = imageParts.slice(0, -1).join(":");
+  
+  // registry 추출 (슬래시가 있으면 첫 번째 부분이 registry)
+  const nameParts = imageName.split("/");
+  let registry = "docker.io";
+  if (nameParts.length > 2 || (nameParts.length === 2 && nameParts[0].includes("."))) {
+    registry = nameParts[0];
+  } else if (nameParts.length === 1) {
+    registry = "docker.io";
+  }
+
+  // 타입은 첫 번째 태그 또는 "템플릿"
+  const type = template.tags.length > 0 ? template.tags[0] : "템플릿";
+
+  // 런타임 기본값
+  const runtime = template.runtime || "containerd";
+
+  return {
+    name: template.name,
+    type,
+    quota: "기본 할당량",
+    runtime,
+    version: tag !== "latest" ? tag : undefined,
+    tag,
+    registry,
+    security: "pass", // 기본값: 보안 통과
+    changelog: template.description,
+  };
+}
 
 const CLUSTER_ZONES: Array<{ label: string }> = [
   { label: "GPU 존" },
@@ -63,6 +102,10 @@ export default async function AdminResourcesPage() {
   const storedNodes = await listStoredNodes();
   const nodeSummary = buildZoneSummary(storedNodes);
   const hasAnyZoneData = nodeSummary.some((zone) => zone.count > 0);
+  
+  // 이미지 템플릿 불러오기
+  const templates = await listTemplates();
+  const containerProfiles = templates.map(convertTemplateToProfile);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -195,8 +238,14 @@ export default async function AdminResourcesPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {containerProfiles.length === 0 ? (
                 <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-slate-950/50 p-6 text-center text-sm text-slate-300">
-                  운영 이미지가 아직 등록되지 않았습니다. CI/CD 파이프라인과 연동해
-                  컨테이너 이미지를 업로드하면 이 영역에서 관리할 수 있습니다.
+                  운영 이미지가 아직 등록되지 않았습니다.{" "}
+                  <Link
+                    href="/admin/resources/images"
+                    className="text-sky-200 underline hover:text-sky-100"
+                  >
+                    이미지 관리 페이지
+                  </Link>
+                  에서 템플릿을 추가하면 이 영역에 표시됩니다.
                 </div>
               ) : (
                 containerProfiles.map((profile) => {
@@ -209,7 +258,7 @@ export default async function AdminResourcesPage() {
                         : "검토 필요";
                   return (
                     <div
-                      key={profile.name}
+                      key={`${profile.name}-${profile.tag}`}
                       className="rounded-2xl border border-white/10 bg-slate-950/60 p-5 text-sm text-slate-200"
                     >
                       <div className="flex items-start justify-between gap-3">

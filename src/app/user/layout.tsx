@@ -91,7 +91,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         footer={
           <p>
             자원 소진 임박 시 자동으로 알림 메일과 슬랙 메시지가 발송됩니다. 문의:
-            hpc-support@quantumflow.kr
+            sales@b-itsolution.com
           </p>
         }
       />

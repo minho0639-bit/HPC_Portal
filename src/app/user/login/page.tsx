@@ -93,7 +93,7 @@ export default function UserLoginPage() {
         </div>
         <div className="space-y-3 text-xs text-slate-400">
           <p>ⓒ {new Date().getFullYear()} QuantumFlow Supercomputing Portal</p>
-          <p>문의: hpc-support@quantumflow.kr</p>
+          <p>문의: sales@b-itsolution.com</p>
         </div>
       </div>
 
@@ -177,7 +177,7 @@ export default function UserLoginPage() {
           </form>
 
           <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-xs text-slate-400">
-            계정이 없으신가요? 관리자에게 계정 발급을 요청하세요. 문의: hpc-support@quantumflow.kr
+            계정이 없으신가요? 관리자에게 계정 발급을 요청하세요. 문의: sales@b-itsolution.com
           </div>
         </div>
       </div>

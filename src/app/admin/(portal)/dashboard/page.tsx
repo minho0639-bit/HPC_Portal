@@ -564,7 +564,7 @@ export default async function AdminDashboardPage() {
                                 {request?.project ?? "알 수 없는 신청"}
                               </p>
                               <p className="mt-1">
-                                신청 {allocation.requestId}
+                                {request ? `${request.organisation} · ${request.owner}` : `신청 ${allocation.requestId}`}
                               </p>
                             </div>
                             <div className="mt-2 text-[11px] text-slate-400">

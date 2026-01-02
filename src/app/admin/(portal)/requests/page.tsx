@@ -83,7 +83,7 @@ export default async function AdminRequestsPage() {
       />
 
       <div className="flex-1 space-y-10 px-6 py-8">
-        <section className="grid gap-4 text-sm text-slate-200 sm:grid-cols-4">
+        <section className="grid gap-4 text-sm text-slate-200 sm:grid-cols-3">
           {[
             {
               label: "전체 신청",
@@ -99,11 +99,6 @@ export default async function AdminRequestsPage() {
               label: "할당 진행",
               value: statusCounts.allocating,
               hint: "컨테이너 배포가 진행 중인 신청입니다.",
-            },
-            {
-              label: "배포 완료",
-              value: statusCounts.fulfilled,
-              hint: "실행 중인 워크로드 수와 연동됩니다.",
             },
           ].map((card) => (
             <div

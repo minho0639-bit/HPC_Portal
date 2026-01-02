@@ -115,7 +115,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </div>
         <main className="flex-1 overflow-y-auto bg-slate-950/40">{children}</main>
         <footer className="border-t border-white/10 bg-slate-950/70 px-6 py-4 text-xs text-slate-500">
-          시스템 설정은 Settings &gt; Policy에서 변경 가능합니다. 문의: ops@quantumflow.kr
+          시스템 설정은 Settings &gt; Policy에서 변경 가능합니다. 문의: sales@b-itsolution.com
         </footer>
       </div>
     </div>
